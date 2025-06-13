@@ -123,14 +123,14 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_PROJECTS="clang" \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
-            -DBUILD_SHARED_LIBS=OFF \             # Disable shared libraries
-            -DLLVM_BUILD_LLVM_DYLIB=OFF \         # Disable LLVM dynamic library
-            -DCLANG_LINK_CLANG_DYLIB=OFF \        # Disable clang dynamic library
-            -DLLVM_ENABLE_PIC=OFF \               # Disable position-independent code
-            -DLLVM_INCLUDE_TESTS=OFF \            # Exclude tests
-            -DLLVM_INCLUDE_EXAMPLES=OFF \         # Exclude examples
-            -DLLVM_ENABLE_ZLIB=FORCE_ON \         # Enable zlib dependency
-            -DLLVM_TARGETS_TO_BUILD=X86 \         # Only build X86 targets
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_BUILD_LLVM_DYLIB=OFF \
+            -DCLANG_LINK_CLANG_DYLIB=OFF \
+            -DLLVM_ENABLE_PIC=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_ENABLE_ZLIB=FORCE_ON \
+            -DLLVM_TARGETS_TO_BUILD=X86 \
             -DCMAKE_EXE_LINKER_FLAGS_RELEASE=-static-libgcc -static-libstdc++ -Wl,--compress-debug-sections=zlib
 
       # Step 6: Build and install
