@@ -14,6 +14,7 @@ jobs:
     outputs:
       llvm_tag: ${{ steps.determine_ref.outputs.llvm_ref }}
       clang_version: ${{ steps.determine_ref.outputs.clang_version }}
+      commit_sha: ${{ steps.get_sha.outputs.commit_sha }}
     steps:
       - name: Determine LLVM ref
         id: determine_ref
@@ -185,10 +186,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: all_artifacts
           pattern: static-clang-*
           merge-multiple: true
 
@@ -198,47 +204,50 @@ jobs:
           sudo apt-get install -y gh
 
       - name: Authenticate GitHub CLI
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh auth login --with-token <<< "$GITHUB_TOKEN"
+        run: gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Create Git tag
+      - name: Create tag and push
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
-          TAG_NAME="v$VERSION-static"
-          
-          # Configure git identity
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          
-          # Create and push tag if doesn't exist
-          if ! git rev-parse $TAG_NAME >/dev/null 2>&1; then
-            git tag $TAG_NAME
-            git push origin $TAG_NAME
-          fi
-          
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          RELEASE_TAG="v$VERSION-static"
+          COMMIT_SHA="${{ needs.get-llvm-tag.outputs.commit_sha }}"
 
-      - name: Create Release with GitHub CLI
-        run: |
-          RELEASE_NOTES=$(cat <<EOF
-          Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build
+          # Clean up possible line breaks
+          COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
+              
+          # Create and push tag if doesn't exist
+          if ! git rev-parse $RELEASE_TAG >/dev/null 2>&1; then
+            echo "Creating tag $RELEASE_TAG pointing to $COMMIT_SHA"
+            git tag $RELEASE_TAG $COMMIT_SHA
+            git push origin $RELEASE_TAG
+          fi
+
+          # Create release targeting specific commit SHA
+          if ! gh release view $RELEASE_TAG >/dev/null 2>&1; then
+            RELEASE_NOTES=$(cat <<EOF
+            Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build
           
-          **Build Details:**
-          - LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}
-          - Platforms: x86_64 Linux
-          - Compilers: GCC and Clang-14
+            **Build Details:**
+            - LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}
+            - Platforms: x86_64 Linux
+            - Compilers: GCC and Clang-14
           
-          **Artifacts:**
-          - GCC-built static libraries
-          - Clang-built static libraries
-          EOF
-          )
-          
-          gh release create $TAG_NAME \
-            --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
-            --notes "$RELEASE_NOTES" \
-            artifacts/*.tar.gz
+            **Artifacts:**
+            - GCC-built static libraries
+            - Clang-built static libraries
+            EOF
+            )
+            
+            gh release create "$RELEASE_TAG" \
+              --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
+              --notes "$RELEASE_NOTES" \
+              --target "$COMMIT_SHA"
+          fi
+
+          # Upload all artifacts to release
+          find all_artifacts -type f | while read file; do
+            gh release upload "$RELEASE_TAG" "$file" --clobber
+          done
 
       - name: Verify Release
-        run: gh release view $TAG_NAME
+        run: gh release view $RELEASE_TAG
