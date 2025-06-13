@@ -52,8 +52,8 @@ jobs:
       # Step 1: Install essential build dependencies
       - name: Install system dependencies
         run: |
-            apt-get update &&
-            apt-get install -y ninja-build libz-dev libc-ares-dev wget build-essential
+            sudo apt-get update &&
+            sudo apt-get install -y ninja-build libz-dev libc-ares-dev wget build-essential
             software-properties-common p7zip-full curl git cmake python3 zlib1g-dev
 
       # Step 2: Special handling for clang builds
@@ -61,21 +61,21 @@ jobs:
         if: matrix.compiler == 'clang'
         run: |
           # Completely remove any existing LLVM/Clang installations
-          apt-get remove --purge -y '^llvm-.*' '^clang-.*' '^libclang-.*' '^libllvm.*' || true
-          apt-get autoremove -y
-          apt-get clean
+          sudo apt-get remove --purge -y '^llvm-.*' '^clang-.*' '^libclang-.*' '^libllvm.*' || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
           echo "All existing LLVM/Clang versions purged"
 
       - name: Install Clang-14 (clang builds only)
         if: matrix.compiler == 'clang'
         run: |
           # Install specific Clang-14 version as build compiler
-          apt-get update
-          apt-get install -y clang-14 libclang-14-dev
+          sudo apt-get update
+          sudo apt-get install -y clang-14 libclang-14-dev
 
           # Set Clang-14 as default compiler
-          update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 100
-          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 100
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 100
 
           # Verify installation
           clang --version
