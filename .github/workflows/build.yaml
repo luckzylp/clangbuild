@@ -39,6 +39,7 @@ jobs:
     needs: get-llvm-tag
     runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
         compiler: [gcc, clang]
     name: Build static clang with ${{ matrix.compiler }}
@@ -54,7 +55,7 @@ jobs:
         run: |
             sudo apt-get update &&
             sudo apt-get install -y ninja-build libz-dev libc-ares-dev wget build-essential
-            software-properties-common p7zip-full curl git cmake python3 zlib1g-dev
+             p7zip-full curl git cmake python3 python3-dev zlib1g-dev
 
       # Step 2: Special handling for clang builds
       - name: Purge existing LLVM/Clang installations (clang builds only)
