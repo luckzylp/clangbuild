@@ -180,7 +180,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Step 1: Collect all build artifacts
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -188,31 +192,53 @@ jobs:
           pattern: static-clang-*
           merge-multiple: true
 
-      # Step 2: Create versioned tag
-      - name: Create release tag
-        id: create-tag
+      - name: Setup GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Authenticate GitHub CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh auth login --with-token <<< "$GITHUB_TOKEN"
+
+      - name: Create Git tag
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
           TAG_NAME="v$VERSION-static"
-          echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
-          echo "RELEASE_NAME=Static libclang $VERSION" >> $GITHUB_ENV
-
-          # Create tag if doesn't exist
+          
+          # Configure git identity
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Create and push tag if doesn't exist
           if ! git rev-parse $TAG_NAME >/dev/null 2>&1; then
             git tag $TAG_NAME
             git push origin $TAG_NAME
-          else
-            echo "Tag $TAG_NAME already exists"
           fi
+          
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
-      # Step 3: Create GitHub release with assets
-      - name: Create GitHub Release
-        id: create-release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.RELEASE_NAME }}
-          files: artifacts/*.tar.gz
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+      - name: Create Release with GitHub CLI
+        run: |
+          RELEASE_NOTES=$(cat <<EOF
+          Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build
+          
+          **Build Details:**
+          - LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}
+          - Platforms: x86_64 Linux
+          - Compilers: GCC and Clang-14
+          
+          **Artifacts:**
+          - GCC-built static libraries
+          - Clang-built static libraries
+          EOF
+          )
+          
+          gh release create $TAG_NAME \
+            --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
+            --notes "$RELEASE_NOTES" \
+            artifacts/*.tar.gz
+
+      - name: Verify Release
+        run: gh release view $TAG_NAME
