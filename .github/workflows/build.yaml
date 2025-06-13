@@ -224,23 +224,23 @@ jobs:
 
           # Create release targeting specific commit SHA
           if ! gh release view $RELEASE_TAG >/dev/null 2>&1; then
-            RELEASE_NOTES=$(cat <<EOF
-            Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build
-          
-            **Build Details:**
-            - LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}
-            - Platforms: x86_64 Linux
-            - Compilers: GCC and Clang-14
-          
-            **Artifacts:**
-            - GCC-built static libraries
-            - Clang-built static libraries
-            EOF
-            )
+            # release notes
+            {
+              echo "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build"
+              echo ""
+              echo "**Build Details:**"
+              echo "- LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}"
+              echo "- Platforms: x86_64 Linux"
+              echo "- Compilers: GCC and Clang-14"
+              echo ""
+              echo "**Artifacts:**"
+              echo "- GCC-built static libraries"
+              echo "- Clang-built static libraries"
+            } > release_notes.md
             
             gh release create "$RELEASE_TAG" \
               --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
-              --notes "$RELEASE_NOTES" \
+              --notes-file release_notes.md \
               --target "$COMMIT_SHA"
           fi
 
