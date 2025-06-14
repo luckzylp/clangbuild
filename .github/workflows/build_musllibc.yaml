@@ -100,31 +100,49 @@ jobs:
           fi
 
       # Apply patch to fix zlib detection issue in CMake
-      # Patch to bypass compress2 symbol check (version-flexible approach)
       - name: Patch LLVM CMake configuration
         run: |
-          # First check if the specific symbol check exists
-          if grep -q 'check_symbol_exists(compress2' llvm-project/llvm/cmake/config-ix.cmake; then
-            # Replace the specific check if found
-            sed -i 's/check_symbol_exists(compress2 "zlib.h" HAVE_COMPRESS2)/set(HAVE_COMPRESS2 1)/g' \
-              llvm-project/llvm/cmake/config-ix.cmake
-            echo "Replaced compress2 check with set command"
-          else
-            # Alternative: Add the set command at appropriate position
-            echo "Standard compress2 check not found, adding HAVE_COMPRESS2=1 manually"
-            awk '/ZLIB_FOUND/ && !found {print "  set(HAVE_COMPRESS2 1)"; found=1} 1' \
-              llvm-project/llvm/cmake/config-ix.cmake > temp && mv temp llvm-project/llvm/cmake/config-ix.cmake
+          # More robust patch to bypass zlib configuration issues
+          patch_file="llvm-project/llvm/cmake/config-ix.cmake"
+
+          # Create backup
+          cp "${patch_file}" "${patch_file}.bak"
+
+          echo "Applying zlib configuration patch..."
+
+          # Primary patch method: insert HAVE_ZLIB=1 before the fatal error
+          awk '
+          /if$$LLVM_ENABLE_ZLIB STREQUAL FORCE_ON AND NOT HAVE_ZLIB$$/ {
+            print "  # Patched: Bypassed zlib check for static build"
+            print "  set(HAVE_ZLIB 1)"
+            print $0
+            next
+          }
+          1
+          ' "${patch_file}.bak" > "${patch_file}"
+
+          # Fallback method if primary didn't find match
+          if ! grep -q "Patched: Bypassed" "${patch_file}"; then
+            echo "Using fallback patching method"
+            awk '
+            /check_symbol_exists\(compress2/ {
+              print "  # Patched: Bypassed compress2 check for static build"
+              print "  set(HAVE_ZLIB 1)"
+              next
+            }
+            1
+            ' "${patch_file}.bak" > "${patch_file}"
           fi
 
-          # Verify patch applied successfully
-          if grep -q 'set(HAVE_COMPRESS2 1)' llvm-project/llvm/cmake/config-ix.cmake; then
-            echo "Successfully ensured HAVE_COMPRESS2=1 in config-ix.cmake"
-            # Print context for verification
-            grep -A 2 -B 2 'HAVE_COMPRESS2' llvm-project/llvm/cmake/config-ix.cmake || true
+          # Final verification
+          if grep -q "set(HAVE_ZLIB 1)" "${patch_file}"; then
+            echo "Patch applied successfully"
+            echo "Modified section:"
+            grep -A 5 -B 5 "HAVE_ZLIB" "${patch_file}" || true
           else
-            echo "ERROR: Failed to patch config-ix.cmake!"
-            # Print relevant section for debugging
-            grep -A 10 -B 10 'zlib' llvm-project/llvm/cmake/config-ix.cmake || true
+            echo "ERROR: Patch application failed"
+            echo "Problematic section:"
+            grep -A 20 -B 20 "ZLIB" "${patch_file}" || true
             exit 1
           fi
 
