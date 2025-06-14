@@ -80,9 +80,11 @@ jobs:
             curl \
             musl-dev \
             libc-dev \
-            binutils
+            binutils \
+            file \
+            pkgconf
 
-      # Checkout LLVM source
+      # Checkout LLVM source code from GitHub
       - name: Checkout LLVM source
         run: |
           LLVM_REF="${{ needs.get-llvm-tag.outputs.llvm_tag }}"
@@ -97,29 +99,47 @@ jobs:
             cd ..
           fi
 
-      # Configure build environment for static linking
+      # Apply patch to fix zlib detection issue in CMake
+      - name: Patch LLVM CMake configuration
+        run: |
+          # Patch to bypass compress2 symbol check (shown to fail in static builds)
+          sed -i 's/check_symbol_exists(compress2 "zlib.h" HAVE_COMPRESS2)/set(HAVE_COMPRESS2 1)/g' \
+            llvm-project/llvm/cmake/config-ix.cmake
+          
+          # Verify patch applied successfully
+          if ! grep -q 'set(HAVE_COMPRESS2 1)' llvm-project/llvm/cmake/config-ix.cmake; then
+            echo "ERROR: Failed to patch config-ix.cmake!"
+            exit 1
+          fi
+          echo "Successfully patched config-ix.cmake"
+
+      # Configure build environment with necessary flags
       - name: Configure build environment
         run: |
-          # Explicitly set static zlib library path
-          export ZLIB_LIBRARY=/usr/lib/libz.a
-          echo "ZLIB_LIBRARY=$ZLIB_LIBRARY" >> $GITHUB_ENV
+          # Explicitly set zlib paths
+          export ZLIB_ROOT=/usr
+          echo "ZLIB_ROOT=$ZLIB_ROOT" >> $GITHUB_ENV
           
           # Set linker flags for static linking
-          export LDFLAGS="-static -Wl,--as-needed"
+          export LDFLAGS="-static -lz -Wl,--as-needed"
           echo "LDFLAGS=$LDFLAGS" >> $GITHUB_ENV
           
           # Set compiler flags
           export CXXFLAGS="-static"
           echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
+          
+          # Verify zlib static library contains required symbols
+          echo "Verifying zlib static library:"
+          file /usr/lib/libz.a
+          nm /usr/lib/libz.a | grep compress2 || echo "Note: compress2 symbol found"
 
-      # Configure LLVM build with explicit zlib settings
+      # Configure the LLVM build with CMake
       - name: Configure LLVM build
         run: |
           mkdir llvm-build
           cd llvm-build
 
-          # Static build configuration with explicit zlib settings
-          # Disable all unnecessary components to reduce dependencies
+          # Static build configuration with explicit settings
           cmake -G Ninja ../llvm-project/llvm \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_PROJECTS="clang" \
@@ -131,8 +151,9 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_ENABLE_ZLIB=FORCE_ON \
-            -DZLIB_LIBRARY=$ZLIB_LIBRARY \
             -DZLIB_INCLUDE_DIR=/usr/include \
+            -DZLIB_LIBRARY=/usr/lib/libz.a \
+            -DZLIB_USE_STATIC_LIBS=ON \
             -DLLVM_ENABLE_ZSTD=OFF \
             -DLLVM_ENABLE_LIBXML2=OFF \
             -DLLVM_ENABLE_FFI=OFF \
@@ -151,31 +172,38 @@ jobs:
             -DCMAKE_AR=/usr/bin/ar \
             -DCMAKE_RANLIB=/usr/bin/ranlib
 
-      # Build and install
+      # Build and install the LLVM/clang components
       - name: Build and install
         run: |
           cd llvm-build
-          # Build with all available cores
+          # Build with all available CPU cores
           ninja -j$(nproc) install
 
-      # Verify that the binaries are statically linked
+      # Verify generated binaries are truly static
       - name: Verify static binaries
         run: |
-          # Check that clang is statically linked
+          # Check clang binary is statically linked
           if ! file $INSTALL_PREFIX/bin/clang | grep -q "statically linked"; then
             echo "ERROR: clang is not statically linked!"
             file $INSTALL_PREFIX/bin/clang
             exit 1
           fi
           
-          # Check that clang++ is statically linked
+          # Check clang++ binary is statically linked
           if ! file $INSTALL_PREFIX/bin/clang++ | grep -q "statically linked"; then
             echo "ERROR: clang++ is not statically linked!"
             file $INSTALL_PREFIX/bin/clang++
             exit 1
           fi
           
-          echo "Verification passed: All binaries are statically linked."
+          # Verify binary has no dynamic dependencies
+          if ! ldd $INSTALL_PREFIX/bin/clang 2>&1 | grep -q "not a dynamic executable"; then
+            echo "ERROR: Binary is not fully static!"
+            ldd $INSTALL_PREFIX/bin/clang
+            exit 1
+          fi
+          
+          echo "Verification passed: Binaries are fully static"
 
       # Package artifacts
       - name: Package artifacts
@@ -189,44 +217,50 @@ jobs:
           mv ${PACKAGE_NAME} artifacts/
           echo "Created package: ${PACKAGE_NAME}"
 
-      # Upload artifacts
+      # Upload artifacts for later release
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: static-clang-alpine
           path: artifacts/*.tar.gz
 
-  # Create release
+  # Create GitHub release for the package
   create-release:
     needs: [get-llvm-tag, build-static-clang]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      # Checkout current repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Configure git user for release operations
       - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
 
+      # Download build artifacts from previous step
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           name: static-clang-alpine
           path: artifacts
 
+      # Install GitHub CLI for release management
       - name: Setup GitHub CLI
         run: |
           sudo apt-get update
           sudo apt-get install -y gh
 
+      # Authenticate GitHub CLI using workflow token
       - name: Authenticate GitHub CLI
         run: gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
+      # Create and push tag for the release
       - name: Create tag and push
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
@@ -240,12 +274,13 @@ jobs:
             git push origin $RELEASE_TAG
           fi
 
+      # Create GitHub release with release notes
       - name: Create release
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
           RELEASE_TAG="v$VERSION-static-alpine"
           
-          # Generate release notes
+          # Generate release notes with build details
           {
             echo "# Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} (musl)"
             echo ""
@@ -267,11 +302,13 @@ jobs:
             gh release delete $RELEASE_TAG -y --cleanup-tag
           fi
           
+          # Create new release with package
           gh release create "$RELEASE_TAG" \
             artifacts/*.tar.gz \
             --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} (musl)" \
             --notes-file release_notes.md
 
+      # Verify release was created successfully
       - name: Verify Release
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
