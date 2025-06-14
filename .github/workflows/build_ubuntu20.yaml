@@ -1,0 +1,259 @@
+name: Build and Release Static libclang
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional: Git ref (tag or commit) of LLVM to build"
+        required: false
+        default: ""
+
+jobs:
+  get-llvm-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      llvm_tag: ${{ steps.determine_ref.outputs.llvm_ref }}
+      clang_version: ${{ steps.determine_ref.outputs.clang_version }}
+      commit_sha: ${{ steps.get_sha.outputs.commit_sha }}
+    steps:
+      - name: Determine LLVM ref
+        id: determine_ref
+        run: |
+          # Use custom ref if provided, otherwise fetch latest stable tag
+          if [ -n "${{ github.event.inputs.ref }}" ]; then
+            LLVM_REF="${{ github.event.inputs.ref }}"
+            echo "Using custom ref: $LLVM_REF"
+          else
+            # Fetch latest stable LLVM release tag
+            LATEST_TAG=$(git ls-remote --tags --refs --sort=-v:refname https://github.com/llvm/llvm-project.git | \
+                         grep -Eo 'refs/tags/llvmorg-[0-9.]+$' | sort -V | tail -n1 | sed 's/refs\/tags\///')
+            LLVM_REF=$LATEST_TAG
+            echo "Using latest tag: $LATEST_TAG"
+          fi
+
+          # Extract clang version (remove llvmorg- prefix)
+          CLANG_VERSION=$(echo $LLVM_REF | sed 's/llvmorg-//')
+          echo "llvm_ref=$LLVM_REF" >> $GITHUB_OUTPUT
+          echo "clang_version=$CLANG_VERSION" >> $GITHUB_OUTPUT
+
+  build-static-clang:
+    needs: get-llvm-tag
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    name: Build static clang with ${{ matrix.compiler }}
+    env:
+      INSTALL_PREFIX: ${{ github.workspace }}/llvm-install
+      PLATFORM: x86_64
+      VERSION: ${{ needs.get-llvm-tag.outputs.clang_version }}
+      COMPILER: ${{ matrix.compiler }}
+
+    steps:
+      # Step 1: Install essential build dependencies
+      - name: Install system dependencies
+        run: |
+            sudo apt-get update &&
+            sudo apt-get install -y ninja-build libz-dev libc-ares-dev wget clang-9
+            software-properties-common p7zip-full curl &&
+            add-apt-repository ppa:git-core/ppa &&
+            wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | sudo apt-key add - &&
+            sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' &&
+            sudo apt-get update &&
+            sudo apt-get install -y git cmake python3.8 python3.8-dev  ninja-build libz-dev wget build-essential curl zlib1g-dev
+
+      # Step 2: Special handling for clang builds
+      - name: Purge existing LLVM/Clang installations (clang builds only)
+        if: matrix.compiler == 'clang'
+        run: |
+          # Completely remove any existing LLVM/Clang installations
+          sudo apt-get remove --purge -y '^llvm-.*' '^clang-.*' '^libclang-.*' '^libllvm.*' || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          echo "All existing LLVM/Clang versions purged"
+
+      - name: Install Clang-9 (clang builds only)
+        if: matrix.compiler == 'clang'
+        run: |
+          # Install specific Clang-9 version as build compiler
+          sudo apt-get update
+          sudo apt-get install -y clang-9 libclang-9-dev
+
+          # Set Clang-9 as default compiler
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-9 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-9 100
+
+          # Verify installation
+          clang --version
+          clang++ --version
+
+      # Step 3: Fetch LLVM source code
+      - name: Checkout LLVM source
+        run: |
+          LLVM_REF="${{ needs.get-llvm-tag.outputs.llvm_tag }}"
+
+          # Attempt to clone specific tag/branch
+          if ! git clone --depth 1 --branch $LLVM_REF https://github.com/llvm/llvm-project.git; then
+            # Fallback to full clone + checkout for commits
+            echo "Cloning full repository (ref may be a commit)"
+            git clone https://github.com/llvm/llvm-project.git
+            cd llvm-project
+            git checkout $LLVM_REF
+            cd ..
+          fi
+
+      # Step 4: Configure build environment
+      - name: Configure build environment
+        run: |
+          # Set compiler based on matrix selection
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            export CC=gcc
+            export CXX=g++
+          else
+            export CC=clang
+            export CXX=clang++
+          fi
+          echo "Selected compiler: $CC/$CXX"
+          echo "CC=$CC" >> $GITHUB_ENV
+          echo "CXX=$CXX" >> $GITHUB_ENV
+
+      # Step 5: Configure LLVM/Clang build
+      - name: Configure LLVM build
+        run: |
+          # Create build directory and configure with CMake
+          mkdir llvm-build
+          cd llvm-build
+
+          # Build configuration for static libraries only
+          cmake -G Ninja ../llvm-project/llvm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_PROJECTS="clang" \
+            -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_BUILD_LLVM_DYLIB=OFF \
+            -DCLANG_LINK_CLANG_DYLIB=OFF \
+            -DLLVM_ENABLE_PIC=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_ENABLE_ZLIB=FORCE_ON \
+            -DLLVM_TARGETS_TO_BUILD=X86 \
+            -DCMAKE_EXE_LINKER_FLAGS_RELEASE="-static-libgcc -Wl,--compress-debug-sections=zlib"
+
+      # Step 6: Build and install
+      - name: Build and install
+        run: |
+          cd llvm-build
+          # Build with all available cores
+          ninja -j$(nproc) install
+
+      # Step 7: Verify output
+      - name: Verify static libraries
+        run: |
+          # Check that static libraries exist
+          if [ ! -d "$INSTALL_PREFIX/lib" ]; then
+            echo "ERROR: Library directory not found!"
+            exit 1
+          fi
+
+          # Verify all libraries are static
+          find $INSTALL_PREFIX -name '*.a' | grep -q . || (echo "No static libraries found!"; exit 1)
+          file $INSTALL_PREFIX/lib/*.a | grep "ar archive" || (echo "Non-static library detected!"; exit 1)
+          echo "Static libraries verified successfully"
+
+      # Step 8: Package artifacts
+      - name: Package artifacts
+        run: |
+          # Create compressed archive with version/platform/compiler in name
+          PACKAGE_NAME="static_clang-${VERSION}-${PLATFORM}-ubuntu20.04-${COMPILER}.tar.gz"
+          tar -czvf ${PACKAGE_NAME} -C ${INSTALL_PREFIX} .
+
+          # Prepare artifacts directory
+          mkdir -p artifacts
+          mv ${PACKAGE_NAME} artifacts/
+          echo "Created package: ${PACKAGE_NAME}"
+
+      # Step 9: Upload artifacts
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-clang-${{ matrix.compiler }}
+          path: artifacts/*.tar.gz
+
+  # Release creation job
+  create-release:
+    needs: [get-llvm-tag, build-static-clang]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all_artifacts
+          pattern: static-clang-*
+          merge-multiple: true
+
+      - name: Setup GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Authenticate GitHub CLI
+        run: gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Create tag and push
+        run: |
+          VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
+          RELEASE_TAG="clang-v$VERSION-static"
+          COMMIT_SHA="${{ needs.get-llvm-tag.outputs.commit_sha }}"
+
+          # Clean up possible line breaks
+          COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
+              
+          # Create and push tag if doesn't exist
+          if ! git rev-parse $RELEASE_TAG >/dev/null 2>&1; then
+            echo "Creating tag $RELEASE_TAG pointing to $COMMIT_SHA"
+            git tag $RELEASE_TAG $COMMIT_SHA
+            git push origin $RELEASE_TAG
+          fi
+
+          # Create release targeting specific commit SHA
+          if ! gh release view $RELEASE_TAG >/dev/null 2>&1; then
+            # release notes
+            {
+              echo "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build"
+              echo ""
+              echo "**Build Details:**"
+              echo "- LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}"
+              echo "- Platforms: x86_64 Linux"
+              echo "- Compilers: GCC and Clang-14"
+              echo ""
+              echo "**Artifacts:**"
+              echo "- GCC-built static libraries"
+              echo "- Clang-built static libraries"
+            } > release_notes.md
+            
+            gh release create "$RELEASE_TAG" \
+              --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
+              --notes-file release_notes.md \
+              --target "$COMMIT_SHA"
+          fi
+
+          # Upload all artifacts to release
+          find all_artifacts -type f | while read file; do
+            gh release upload "$RELEASE_TAG" "$file" --clobber
+          done
+
+      - name: Verify Release
+        run: gh release view $RELEASE_TAG
