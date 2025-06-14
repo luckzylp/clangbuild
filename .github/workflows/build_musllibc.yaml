@@ -79,7 +79,8 @@ jobs:
             zlib-static \
             curl \
             musl-dev \
-            libc-dev
+            libc-dev \
+            binutils
 
       # Checkout LLVM source
       - name: Checkout LLVM source
@@ -108,7 +109,7 @@ jobs:
           echo "LDFLAGS=$LDFLAGS" >> $GITHUB_ENV
           
           # Set compiler flags
-          export CXXFLAGS="-static -fuse-ld=lld"
+          export CXXFLAGS="-static"
           echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
 
       # Configure LLVM build with explicit zlib settings
@@ -147,7 +148,6 @@ jobs:
             -DCOMPILER_RT_BUILD_XRAY=OFF \
             -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
             -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-            -DLLVM_ENABLE_LLD=ON \
             -DCMAKE_AR=/usr/bin/ar \
             -DCMAKE_RANLIB=/usr/bin/ranlib
 
