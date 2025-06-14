@@ -54,7 +54,6 @@ jobs:
 
   build-static-clang:
     needs: get-llvm-tag
-    # Use Alpine container running on Ubuntu host
     runs-on: ubuntu-latest
     container:
       image: alpine:3.19
@@ -96,7 +95,7 @@ jobs:
             cd ..
           fi
 
-      # Configure build environment for static linking
+      # Configure build environment with necessary linker flags
       - name: Configure build environment
         run: |
           # Explicitly set static zlib library path
@@ -118,7 +117,6 @@ jobs:
           cd llvm-build
 
           # Static build configuration with explicit zlib settings
-          # Disable all unnecessary components to reduce dependencies
           cmake -G Ninja ../llvm-project/llvm \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_PROJECTS="clang" \
