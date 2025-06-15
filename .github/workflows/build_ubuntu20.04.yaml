@@ -67,7 +67,19 @@ jobs:
         run: |
           apt-get update
           # Install software-properties-common FIRST to get add-apt-repository
-          DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
+          DEBIAN_FRONTEND=noninteractive apt-get install -y
+            software-properties-common \
+            ninja-build \
+            libz-dev \
+            libc-ares-dev \
+            wget \
+            p7zip-full \
+            curl \
+            git \
+            build-essential \
+            binutils \
+            gpg \
+            gpg-agent
 
           # Add required repositories
           add-apt-repository -y ppa:git-core/ppa
@@ -79,20 +91,9 @@ jobs:
 
           # Install all dependencies in one command to avoid line break issues
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            ninja-build \
-            libz-dev \
-            libc-ares-dev \
-            wget \
-            p7zip-full \
-            curl \
-            git \
             cmake \
             python3.8 \
-            python3.8-dev \
-            build-essential \
-            binutils \
-            gpg \
-            gpg-agent
+            python3.8-dev
 
       # Step 2: Setup specific compilers
       - name: Configure GCC as default (GCC builds)
