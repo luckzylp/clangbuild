@@ -122,9 +122,9 @@ jobs:
         if: matrix.compiler == 'clang'
         run: |
           # Completely remove any existing LLVM/Clang installations
-          sudo apt-get remove --purge -y '^llvm-.*' '^clang-.*' '^libclang-.*' '^libllvm.*' || true
-          sudo apt-get autoremove -y
-          sudo apt-get clean
+          apt-get remove --purge -y '^llvm-.*' '^clang-.*' '^libclang-.*' '^libllvm.*' || true
+          apt-get autoremove -y
+          apt-get clean
           echo "All existing LLVM/Clang versions purged"
 
           # Install Clang-9 and development tools
