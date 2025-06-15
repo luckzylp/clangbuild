@@ -274,6 +274,15 @@ jobs:
           # Clean up possible line breaks
           COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
 
+          # First fetch the commit from origin
+          git fetch origin $COMMIT_SHA
+
+          # Verify the commit exists locally
+          if ! git cat-file -e $COMMIT_SHA; then
+            echo "ERROR: Commit $COMMIT_SHA does not exist locally"
+            exit 1
+          fi
+
           # Create and push tag if doesn't exist
           if ! git rev-parse $RELEASE_TAG >/dev/null 2>&1; then
             echo "Creating tag $RELEASE_TAG pointing to $COMMIT_SHA"
@@ -283,9 +292,8 @@ jobs:
 
           # Create release targeting specific commit SHA
           if ! gh release view $RELEASE_TAG >/dev/null 2>&1; then
-            # release notes
             {
-              echo "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build"
+              echo "Static libclang $VERSION Build"
               echo ""
               echo "**Build Details:**"
               echo "- LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}"
@@ -299,7 +307,7 @@ jobs:
             } > release_notes.md
 
             gh release create "$RELEASE_TAG" \
-              --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
+              --title "Static libclang $VERSION" \
               --notes-file release_notes.md \
               --target "$COMMIT_SHA"
           fi
