@@ -63,37 +63,49 @@ jobs:
 
     steps:
       # Step 1: Update package lists and install essential dependencies
+            # Step 1: Update package lists and install essential dependencies
       - name: Install system dependencies
         run: |
+          # Update package lists
           apt-get update
-          # Install software-properties-common FIRST to get add-apt-repository
-          DEBIAN_FRONTEND=noninteractive apt-get install -y
+
+          # Install absolutely essential dependencies first
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates \
             software-properties-common \
-            ninja-build \
-            libz-dev \
-            libc-ares-dev \
-            wget \
-            p7zip-full \
-            curl \
-            git \
-            build-essential \
-            binutils \
-            gpg \
-            gpg-agent
+            apt-transport-https \
+            gnupg \
+            wget
 
           # Add required repositories
           add-apt-repository -y ppa:git-core/ppa
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware.gpg
-          echo "deb [signed-by=/usr/share/keyrings/kitware.gpg] https://apt.kitware.com/ubuntu/ focal main" | tee /etc/apt/sources.list.d/kitware.list
 
-          # Update after adding repositories
+          # Install Kitware signing key properly
+          wget -qO- https://apt.kitware.com/keys/kitware-archive-latest.asc | \
+            gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ focal main" | \
+            tee /etc/apt/sources.list.d/kitware.list >/dev/null
+
+          # Update again with new repositories
           apt-get update
 
-          # Install all dependencies in one command to avoid line break issues
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          # Install all build dependencies
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ninja-build \
+            libz-dev \
+            libc-ares-dev \
+            p7zip-full \
+            curl \
+            git \
             cmake \
             python3.8 \
-            python3.8-dev
+            python3.8-dev \
+            build-essential \
+            binutils \
+            gcc-9 \
+            g++-9 \
+            clang-9 \
+            libclang-9-dev
 
       # Step 2: Setup specific compilers
       - name: Configure GCC as default (GCC builds)
