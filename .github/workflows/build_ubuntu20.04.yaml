@@ -269,13 +269,12 @@ jobs:
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
           RELEASE_TAG="ubuntu20.04-clang-v$VERSION-static"
-          COMMIT_SHA="${{ needs.get-llvm-tag.outputs.commit_sha }}"
+          
+          # Use current HEAD commit instead
+          COMMIT_SHA=$(git rev-parse HEAD)
 
           # Clean up possible line breaks
           COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
-
-          # First fetch the commit from origin
-          git fetch origin $COMMIT_SHA
 
           # Verify the commit exists locally
           if ! git cat-file -e $COMMIT_SHA; then
