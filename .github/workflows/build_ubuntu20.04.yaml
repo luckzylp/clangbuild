@@ -1,4 +1,5 @@
-name: Build and Release Static libclang
+name: Build and Release Static libclang on Ubuntu 20.04
+
 
 on:
   workflow_dispatch:
@@ -46,7 +47,7 @@ jobs:
   build-static-clang:
     needs: get-llvm-tag
     runs-on: ubuntu-latest  # Host runner is latest Ubuntu
-    container: 
+    container:
       image: ubuntu:20.04  # Use Ubuntu 20.04 container
       options: --user root
     strategy:
@@ -70,7 +71,7 @@ jobs:
             cmake curl wget python3 python3-dev \
             zlib1g-dev libc-ares-dev libz-dev \
             ca-certificates software-properties-common
-          
+
           # Add GCC-9 repository for newer compiler options
           add-apt-repository -y ppa:ubuntu-toolchain-r/test
           apt-get update
@@ -91,13 +92,13 @@ jobs:
         run: |
           # Install Clang-9 and development tools
           apt-get install -y clang-9 libclang-9-dev
-          
+
           # Set Clang-9 as default compiler
           update-alternatives --install /usr/bin/clang clang /usr/bin/clang-9 100
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-9 100
           update-alternatives --install /usr/bin/cc cc /usr/bin/clang-9 100
           update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-9 100
-          
+
           # Verify installation
           clang --version
           clang++ --version
@@ -106,7 +107,7 @@ jobs:
       - name: Checkout LLVM source
         run: |
           LLVM_REF="${{ needs.get-llvm-tag.outputs.llvm_tag }}"
-          
+
           # Attempt shallow clone first for tags
           if ! git clone --depth 1 --branch $LLVM_REF https://github.com/llvm/llvm-project.git; then
             # Fallback to full clone + checkout for commits
@@ -234,7 +235,7 @@ jobs:
 
           # Clean up possible line breaks
           COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
-              
+
           # Create and push tag if doesn't exist
           if ! git rev-parse $RELEASE_TAG >/dev/null 2>&1; then
             echo "Creating tag $RELEASE_TAG pointing to $COMMIT_SHA"
@@ -258,7 +259,7 @@ jobs:
               echo "- GCC-built static libraries"
               echo "- Clang-built static libraries"
             } > release_notes.md
-            
+
             gh release create "$RELEASE_TAG" \
               --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
               --notes-file release_notes.md \
