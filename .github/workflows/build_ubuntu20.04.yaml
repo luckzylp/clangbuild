@@ -75,7 +75,8 @@ jobs:
             software-properties-common \
             apt-transport-https \
             gnupg \
-            wget
+            wget \
+            file
 
           # Add required repositories
           add-apt-repository -y ppa:git-core/ppa
