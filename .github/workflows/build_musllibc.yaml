@@ -154,6 +154,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_PROJECTS="clang" \
             -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
+            -DCMAKE_SKIP_RPATH=ON \
+            -DCMAKE_SKIP_INSTALL_RPATH=ON \
             -DBUILD_SHARED_LIBS=OFF \
             -DLLVM_BUILD_LLVM_DYLIB=OFF \
             -DCLANG_LINK_CLANG_DYLIB=OFF \
