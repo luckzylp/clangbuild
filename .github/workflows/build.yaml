@@ -214,7 +214,7 @@ jobs:
 
           # Clean up possible line breaks
           COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
-              
+
           # Create and push tag if doesn't exist
           if ! git rev-parse $RELEASE_TAG >/dev/null 2>&1; then
             echo "Creating tag $RELEASE_TAG pointing to $COMMIT_SHA"
@@ -237,7 +237,7 @@ jobs:
               echo "- GCC-built static libraries"
               echo "- Clang-built static libraries"
             } > release_notes.md
-            
+
             gh release create "$RELEASE_TAG" \
               --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
               --notes-file release_notes.md \

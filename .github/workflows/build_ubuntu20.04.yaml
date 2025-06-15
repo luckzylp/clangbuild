@@ -66,18 +66,33 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get update &&
-            apt-get install -y ninja-build libz-dev libc-ares-dev wget clang-9
-            software-properties-common p7zip-full curl &&
-            add-apt-repository ppa:git-core/ppa &&
-            wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | apt-key add - &&
-            apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' &&
-            apt-get update &&
-            apt-get install -y git cmake python3.8 python3.8-dev build-essential
+          # Install software-properties-common FIRST to get add-apt-repository
+          DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
 
-          # Add GCC-9 repository for newer compiler options
-          add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          # Add required repositories
+          add-apt-repository -y ppa:git-core/ppa
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware.gpg
+          echo "deb [signed-by=/usr/share/keyrings/kitware.gpg] https://apt.kitware.com/ubuntu/ focal main" | tee /etc/apt/sources.list.d/kitware.list
+
+          # Update after adding repositories
           apt-get update
+
+          # Install all dependencies in one command to avoid line break issues
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ninja-build \
+            libz-dev \
+            libc-ares-dev \
+            wget \
+            p7zip-full \
+            curl \
+            git \
+            cmake \
+            python3.8 \
+            python3.8-dev \
+            build-essential \
+            binutils \
+            gpg \
+            gpg-agent
 
       # Step 2: Setup specific compilers
       - name: Configure GCC as default (GCC builds)
@@ -93,6 +108,12 @@ jobs:
       - name: Configure Clang-9 (Clang builds)
         if: matrix.compiler == 'clang'
         run: |
+          # Completely remove any existing LLVM/Clang installations
+          sudo apt-get remove --purge -y '^llvm-.*' '^clang-.*' '^libclang-.*' '^libllvm.*' || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          echo "All existing LLVM/Clang versions purged"
+
           # Install Clang-9 and development tools
           apt-get install -y clang-9 libclang-9-dev
 
