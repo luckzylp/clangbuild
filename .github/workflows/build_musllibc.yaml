@@ -64,7 +64,7 @@ jobs:
       VERSION: ${{ needs.get-llvm-tag.outputs.clang_version }}
 
     steps:
-      # Install Alpine build dependencies
+      # Install Alpine build dependencies (without zlib)
       - name: Install Alpine build dependencies
         run: |
           apk update
@@ -75,14 +75,13 @@ jobs:
             git \
             python3 \
             linux-headers \
-            zlib-dev \
-            zlib-static \
             curl \
             musl-dev \
             libc-dev \
             binutils \
             file \
-            pkgconf
+            pkgconf \
+            wget
 
       # Checkout LLVM source code from GitHub
       - name: Checkout LLVM source
@@ -99,80 +98,58 @@ jobs:
             cd ..
           fi
 
-      # Apply patch to fix zlib detection issue in CMake
-      - name: Patch LLVM CMake configuration
+      # Build static zlib from source to ensure complete static linking
+      - name: Build static zlib
         run: |
-          # More robust patch to bypass zlib configuration issues
-          patch_file="llvm-project/llvm/cmake/config-ix.cmake"
+          # Define zlib version to build (known compatible version)
+          ZLIB_VERSION="1.3.1"
 
-          # Create backup
-          cp "${patch_file}" "${patch_file}.bak"
+          # Download zlib source code
+          wget https://zlib.net/zlib-${ZLIB_VERSION}.tar.gz
 
-          echo "Applying zlib configuration patch..."
+          # Extract source archive
+          tar xvf zlib-${ZLIB_VERSION}.tar.gz
+          cd zlib-${ZLIB_VERSION}
 
-          # Primary patch method: insert HAVE_ZLIB=1 before the fatal error
-          awk '
-          /if$$LLVM_ENABLE_ZLIB STREQUAL FORCE_ON AND NOT HAVE_ZLIB$$/ {
-            print "  # Patched: Bypassed zlib check for static build"
-            print "  set(HAVE_ZLIB 1)"
-            print $0
-            next
-          }
-          1
-          ' "${patch_file}.bak" > "${patch_file}"
+          # Configure build for static library only
+          # --static: Build static library
+          # --prefix: Set installation directory
+          ./configure --static --prefix=/zlib-install
 
-          # Fallback method if primary didn't find match
-          if ! grep -q "Patched: Bypassed" "${patch_file}"; then
-            echo "Using fallback patching method"
-            awk '
-            /check_symbol_exists\(compress2/ {
-              print "  # Patched: Bypassed compress2 check for static build"
-              print "  set(HAVE_ZLIB 1)"
-              next
-            }
-            1
-            ' "${patch_file}.bak" > "${patch_file}"
-          fi
+          # Build with all available CPU cores
+          make -j$(nproc)
 
-          # Final verification
-          if grep -q "set(HAVE_ZLIB 1)" "${patch_file}"; then
-            echo "Patch applied successfully"
-            echo "Modified section:"
-            grep -A 5 -B 5 "HAVE_ZLIB" "${patch_file}" || true
-          else
-            echo "ERROR: Patch application failed"
-            echo "Problematic section:"
-            grep -A 20 -B 20 "ZLIB" "${patch_file}" || true
-            exit 1
-          fi
+          # Install to /zlib-install
+          make install
+          cd ..
 
-      # Configure build environment with necessary flags
+          # Set environment variables for CMake configuration
+          echo "ZLIB_ROOT=/zlib-install" >> $GITHUB_ENV
+          echo "ZLIB_LIBRARY=/zlib-install/lib/libz.a" >> $GITHUB_ENV
+          echo "ZLIB_INCLUDE_DIR=/zlib-install/include" >> $GITHUB_ENV
+          echo "CUSTOM_ZLIB=1" >> $GITHUB_ENV
+
+      # Configure build environment variables
       - name: Configure build environment
         run: |
-          # Explicitly set zlib paths
-          export ZLIB_ROOT=/usr
-          echo "ZLIB_ROOT=$ZLIB_ROOT" >> $GITHUB_ENV
-
           # Set linker flags for static linking
-          export LDFLAGS="-static -lz -Wl,--as-needed"
+          # -static: Create fully static executable
+          # -Wl,--as-needed: Only link libraries that are actually used
+          export LDFLAGS="-static -Wl,--as-needed"
           echo "LDFLAGS=$LDFLAGS" >> $GITHUB_ENV
 
-          # Set compiler flags
+          # Set compiler flags for static linking
           export CXXFLAGS="-static"
           echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
 
-          # Verify zlib static library contains required symbols
-          echo "Verifying zlib static library:"
-          file /usr/lib/libz.a
-          nm /usr/lib/libz.a | grep compress2 || echo "Note: compress2 symbol found"
-
-      # Configure the LLVM build with CMake
+      # Configure LLVM build with custom static zlib
       - name: Configure LLVM build
         run: |
+          # Create build directory
           mkdir llvm-build
           cd llvm-build
 
-          # Static build configuration with explicit settings
+          # Generate build files with CMake
           cmake -G Ninja ../llvm-project/llvm \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_ENABLE_PROJECTS="clang" \
@@ -184,22 +161,16 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF \
             -DLLVM_INCLUDE_EXAMPLES=OFF \
             -DLLVM_ENABLE_ZLIB=FORCE_ON \
-            -DZLIB_INCLUDE_DIR=/usr/include \
-            -DZLIB_LIBRARY=/usr/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=$ZLIB_INCLUDE_DIR \
+            -DZLIB_LIBRARY=$ZLIB_LIBRARY \
             -DZLIB_USE_STATIC_LIBS=ON \
             -DLLVM_ENABLE_ZSTD=OFF \
             -DLLVM_ENABLE_LIBXML2=OFF \
             -DLLVM_ENABLE_FFI=OFF \
             -DLLVM_ENABLE_LIBEDIT=OFF \
-            -DLLVM_ENABLE_TERMINFO=OFF \
             -DLLVM_ENABLE_LIBPFM=OFF \
-            -DLLVM_ENABLE_LIBX86=OFF \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_TARGETS_TO_BUILD=X86 \
-            -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
-            -DCOMPILER_RT_BUILD_PROFILE=OFF \
-            -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
-            -DCOMPILER_RT_BUILD_XRAY=OFF \
             -DCMAKE_EXE_LINKER_FLAGS="$LDFLAGS" \
             -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
             -DCMAKE_AR=/usr/bin/ar \
