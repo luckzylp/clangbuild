@@ -1,4 +1,4 @@
-name: Build and Release Static libclang
+name: Build and Release Static libclang on Ubuntu 22.04
 
 on:
   workflow_dispatch:
@@ -209,11 +209,19 @@ jobs:
       - name: Create tag and push
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
-          RELEASE_TAG="v$VERSION-static"
-          COMMIT_SHA="${{ needs.get-llvm-tag.outputs.commit_sha }}"
+          RELEASE_TAG="ubuntu22.04-clang-v$VERSION-static"
+	  
+          # Use current HEAD commit instead
+          COMMIT_SHA=$(git rev-parse HEAD)
 
           # Clean up possible line breaks
           COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
+	  
+          # Verify the commit exists locally
+          if ! git cat-file -e $COMMIT_SHA; then
+            echo "ERROR: Commit $COMMIT_SHA does not exist locally"
+            exit 1
+          fi
 
           # Create and push tag if doesn't exist
           if ! git rev-parse $RELEASE_TAG >/dev/null 2>&1; then
@@ -222,26 +230,29 @@ jobs:
             git push origin $RELEASE_TAG
           fi
 
-          # Create release targeting specific commit SHA
+          # Create prerelease targeting specific commit SHA
           if ! gh release view $RELEASE_TAG >/dev/null 2>&1; then
             # release notes
             {
-              echo "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }} Build"
+              echo "Static libclang $VERSION Build"
               echo ""
               echo "**Build Details:**"
               echo "- LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}"
               echo "- Platforms: x86_64 Linux"
-              echo "- Compilers: GCC and Clang-14"
+              echo "- Compilers: GCC-11 and Clang-14"
+              echo "- Built in Ubuntu 22.04"
               echo ""
               echo "**Artifacts:**"
               echo "- GCC-built static libraries"
               echo "- Clang-built static libraries"
             } > release_notes.md
 
+            # Create as prerelease using the --prerelease flag
             gh release create "$RELEASE_TAG" \
-              --title "Static libclang ${{ needs.get-llvm-tag.outputs.clang_version }}" \
+              --title "Static libclang $VERSION" \
               --notes-file release_notes.md \
-              --target "$COMMIT_SHA"
+              --target "$COMMIT_SHA" \
+              --prerelease
           fi
 
           # Upload all artifacts to release

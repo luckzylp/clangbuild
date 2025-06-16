@@ -1,6 +1,5 @@
 name: Build and Release Static libclang on Ubuntu 20.04
 
-
 on:
   workflow_dispatch:
     inputs:
@@ -63,7 +62,6 @@ jobs:
 
     steps:
       # Step 1: Update package lists and install essential dependencies
-            # Step 1: Update package lists and install essential dependencies
       - name: Install system dependencies
         run: |
           # Update package lists
@@ -289,7 +287,7 @@ jobs:
             git push origin $RELEASE_TAG
           fi
 
-          # Create release targeting specific commit SHA
+          # Create prerelease targeting specific commit SHA
           if ! gh release view $RELEASE_TAG >/dev/null 2>&1; then
             {
               echo "Static libclang $VERSION Build"
@@ -305,10 +303,12 @@ jobs:
               echo "- Clang-built static libraries"
             } > release_notes.md
 
+            # Create as prerelease using the --prerelease flag
             gh release create "$RELEASE_TAG" \
               --title "Static libclang $VERSION" \
               --notes-file release_notes.md \
-              --target "$COMMIT_SHA"
+              --target "$COMMIT_SHA" \
+              --prerelease
           fi
 
           # Upload all artifacts to release
