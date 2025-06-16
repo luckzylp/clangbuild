@@ -102,9 +102,7 @@ jobs:
             build-essential \
             binutils \
             gcc-9 \
-            g++-9 \
-            clang-9 \
-            libclang-9-dev
+            g++-9
 
       # Step 2: Setup specific compilers
       - name: Configure GCC as default (GCC builds)
