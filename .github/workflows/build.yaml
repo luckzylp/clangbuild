@@ -259,6 +259,3 @@ jobs:
           find all_artifacts -type f | while read file; do
             gh release upload "$RELEASE_TAG" "$file" --clobber
           done
-
-      - name: Verify Release
-        run: gh release view $RELEASE_TAG

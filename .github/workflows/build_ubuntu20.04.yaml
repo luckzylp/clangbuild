@@ -267,7 +267,7 @@ jobs:
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
           RELEASE_TAG="ubuntu20.04-clang-v$VERSION-static"
-          
+
           # Use current HEAD commit instead
           COMMIT_SHA=$(git rev-parse HEAD)
 
@@ -315,6 +315,3 @@ jobs:
           find all_artifacts -type f | while read file; do
             gh release upload "$RELEASE_TAG" "$file" --clobber
           done
-
-      - name: Verify Release
-        run: gh release view $RELEASE_TAG
