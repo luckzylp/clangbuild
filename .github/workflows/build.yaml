@@ -210,13 +210,13 @@ jobs:
         run: |
           VERSION="${{ needs.get-llvm-tag.outputs.clang_version }}"
           RELEASE_TAG="ubuntu22.04-clang-v$VERSION-static"
-	  
+
           # Use current HEAD commit instead
           COMMIT_SHA=$(git rev-parse HEAD)
 
           # Clean up possible line breaks
           COMMIT_SHA=$(echo "$COMMIT_SHA" | tr -d '\n')
-	  
+
           # Verify the commit exists locally
           if ! git cat-file -e $COMMIT_SHA; then
             echo "ERROR: Commit $COMMIT_SHA does not exist locally"
