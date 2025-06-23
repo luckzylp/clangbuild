@@ -100,9 +100,8 @@ jobs:
             python3.8 \
             python3.8-dev \
             build-essential \
-            binutils \
-            gcc-9 \
-            g++-9
+            binutils
+
 
       # Step 2: Setup specific compilers
       - name: Configure GCC as default (GCC builds)
@@ -115,7 +114,7 @@ jobs:
           gcc --version
           g++ --version
 
-      - name: Configure Clang-9 (Clang builds)
+      - name: Configure Clang-10 (Clang builds)
         if: matrix.compiler == 'clang'
         run: |
           # Completely remove any existing LLVM/Clang installations
@@ -124,14 +123,14 @@ jobs:
           apt-get clean
           echo "All existing LLVM/Clang versions purged"
 
-          # Install Clang-9 and development tools
-          apt-get install -y clang-9 libclang-9-dev
+          # Install Clang-10 tools
+          apt-get install -y clang-10
 
-          # Set Clang-9 as default compiler
-          update-alternatives --install /usr/bin/clang clang /usr/bin/clang-9 100
-          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-9 100
-          update-alternatives --install /usr/bin/cc cc /usr/bin/clang-9 100
-          update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-9 100
+          # Set Clang-10 as default compiler
+          update-alternatives --install /usr/bin/clang clang /usr/bin/clang-10 100
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-10 100
+          update-alternatives --install /usr/bin/cc cc /usr/bin/clang-10 100
+          update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-10 100
 
           # Verify installation
           clang --version
@@ -293,7 +292,7 @@ jobs:
               echo "**Build Details:**"
               echo "- LLVM Version: ${{ needs.get-llvm-tag.outputs.llvm_tag }}"
               echo "- Platform: x86_64 Linux"
-              echo "- Compilers: GCC-9 and Clang-9"
+              echo "- Compilers: GCC-9 and Clang-10"
               echo "- Built in Ubuntu 20.04 container"
               echo ""
               echo "**Artifacts:**"
